@@ -1,5 +1,27 @@
 #!/bin/sh
 
+show_usage() {
+    echo "Usage:"
+    echo "    xbps-mini-builder [-f|--force]"
+    echo "    -f|--force        build packages even if not updated since last build"
+}
+
+force_build=
+while :; do
+    case $1 in
+        -f|--force)
+            force_build=1
+            shift
+            ;;
+        -h|--help)
+            show_usage
+            exit
+            ;;
+        *)
+            break
+    esac
+done
+
 # Jump to the directory that owns this script
 cd "${0%/*}" || exit 1
 
@@ -27,6 +49,9 @@ else
     # Yes, pull in the changes for this run
     git reset --hard HEAD
     git pull | tee ../changed
+    if [ -s "$force_build" ]; then
+        cat packages.list >> ../changed
+    fi
 fi
 
 # Does this system use another set of repos
