@@ -56,10 +56,10 @@ fi
 
 # Does this system use another set of repos
 if [ -d /etc/xbps.d ] ; then
-    cat /etc/xbps.d/* > etc/repos-remote.conf
+    cat /etc/xbps.d/*.conf > etc/repos-remote.conf
     # If this platform is 64 bit, override those as well
     if [ "$(xbps-uhelper arch)" = "x86_64" ] ; then
-        cat /etc/xbps.d/* > etc/repos-remote-x86_64.conf
+        cat /etc/xbps.d/*.conf > etc/repos-remote-x86_64.conf
     fi
 
     # The bootstrap config is loaded seperately
