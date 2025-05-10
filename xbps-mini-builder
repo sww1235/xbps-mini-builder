@@ -10,7 +10,8 @@ show_usage() {
 	echo "    -f|--force        build packages even if not updated since last build"
 }
 
-force_build=
+REPOF="void-packages"
+force_build=0
 while :; do
 	case $1 in
 		-f|--force)
@@ -30,7 +31,7 @@ done
 cd "${0%/*}" || exit 1
 
 # Do we have keys to sign with?
-if [ ! -f $HOME/id_rsa ] ; then
+if [ ! -f "$HOME"/id_rsa ] ; then
 	>&2 echo "No RSA keys found to sign with."
 	return 1
 fi
@@ -38,18 +39,15 @@ fi
 # Remove old state
 rm -f changed
 
-# Create the void-packages directory if it doesn't exit
-mkdir -p void-packages
-cd void-packages || exit 2
-
 # Do we actually have the repo yet?
 if [ ! -d srcpkgs ] ; then
 	# No, clone a fresh copy
 	git clone https://github.com/void-linux/void-packages .
-
+	cd $REPOF || exit 2
 	# On bootstrap we need to build everything
 	cp ../packages.list ../changed
 else
+	cd $REPOF || exit 2
 	# Yes, pull in the changes for this run
 	git reset --hard HEAD
 	git pull | tee ../changed
@@ -87,7 +85,7 @@ if [ -f ../xbps-src.conf ] ; then
 	cat ../xbps-src.conf >> etc/conf
 fi
 
-if [ -z "$@" ] ; then
+if [ $# -eq 0 ] ; then
 	while read -r package ; do
 		if grep "${package}" ../changed; then
 			./xbps-src pkg "${package}"
@@ -100,25 +98,24 @@ else
 fi
 
 binpkg_files_present () {
-	if [[ -d "hostdir/binpkgs/${1}" -a -f "hostdir/binpkgs/${1}"/*.xbps ]]; then
-		return 0
+	if [ -d "hostdir/binpkgs/${1}" ]; then
+		for file in "hostdir/binpkgs/${1}"/*.xbps ; do
+			if [ -f "$file" ]
+			then
+				return 0
+			fi
+		done
 	else
 		return 1
 	fi
 }
 
-# # Sign built packages
-# if binpkg_files_present; then
-#     xbps-rindex --sign --signedby "XBPS-mini-builder" --privkey ../id_rsa hostdir/binpkgs
-#     xbps-rindex --sign-pkg --privkey ../id_rsa hostdir/binpkgs/*.xbps
-# fi
-
 for folder in "" multilib multilib/nonfree nonfree ; do
 	printf "Trying to sign packages in %s\\n" ${folder}
 	if binpkg_files_present ${folder} ; then
 		printf "Updating repodata in hostdir/binpkgs/%s\\n" ${folder}
-		xbps-rindex --sign --signedby "XBPS-mini-builder" --privkey $HOME/id_rsa "hostdir/binpkgs/${folder}"
+		xbps-rindex --sign --signedby "XBPS-mini-builder" --privkey "$HOME"/id_rsa "hostdir/binpkgs/${folder}"
 		printf "Signing packages in hostdir/binpkgs/%s\\n" ${folder}
-		xbps-rindex --sign-pkg --privkey $HOME/id_rsa hostdir/binpkgs/${folder}*.xbps
+		xbps-rindex --sign-pkg --privkey "$HOME"/id_rsa hostdir/binpkgs/${folder}*.xbps
 	fi
 done
