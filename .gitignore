@@ -4,3 +4,5 @@ xbps-src.conf
 packages.list
 id_rsa*
 changed
+# ignore vim temp files
+*.swp
