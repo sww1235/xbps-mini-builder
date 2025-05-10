@@ -30,9 +30,9 @@ done
 cd "${0%/*}" || exit 1
 
 # Do we have keys to sign with?
-if [ ! -f id_rsa ] ; then
-	rm -rf id_rsa id_rsa.pub
-	ssh-keygen -b 4096 -t rsa -m PEM -N "" -f id_rsa
+if [ ! -f $HOME/id_rsa ] ; then
+	>&2 echo "No RSA keys found to sign with."
+	return 1
 fi
 
 # Remove old state
@@ -117,8 +117,8 @@ for folder in "" multilib multilib/nonfree nonfree ; do
 	printf "Trying to sign packages in %s\\n" ${folder}
 	if binpkg_files_present ${folder} ; then
 		printf "Updating repodata in hostdir/binpkgs/%s\\n" ${folder}
-			xbps-rindex --sign --signedby "XBPS-mini-builder" --privkey ../id_rsa "hostdir/binpkgs/${folder}"
-			printf "Signing packages in hostdir/binpkgs/%s\\n" ${folder}
-			xbps-rindex --sign-pkg --privkey ../id_rsa hostdir/binpkgs/${folder}*.xbps
+		xbps-rindex --sign --signedby "XBPS-mini-builder" --privkey $HOME/id_rsa "hostdir/binpkgs/${folder}"
+		printf "Signing packages in hostdir/binpkgs/%s\\n" ${folder}
+		xbps-rindex --sign-pkg --privkey $HOME/id_rsa hostdir/binpkgs/${folder}*.xbps
 	fi
 done
