@@ -40,10 +40,11 @@ fi
 rm -f changed
 
 # Do we actually have the repo yet?
-if [ ! -d srcpkgs ] ; then
+if [ ! -d $REPOF ] ; then
 	# No, clone a fresh copy
-	git clone https://github.com/void-linux/void-packages .
+	git clone https://github.com/void-linux/void-packages
 	cd $REPOF || exit 2
+	./xbps-src bootstrap-update
 	# On bootstrap we need to build everything
 	cp ../packages.list ../changed
 else
@@ -51,10 +52,13 @@ else
 	# Yes, pull in the changes for this run
 	git reset --hard HEAD
 	git pull | tee ../changed
+	./xbps-src bootstrap-update
 	if [ -s "$force_build" ]; then
 		cat packages.list >> ../changed
 	fi
 fi
+
+# here we are already in $REPOF
 
 # Does this system use another set of repos
 if [ -d /etc/xbps.d ] ; then
@@ -74,10 +78,10 @@ fi
 # Do we have a live build environment
 if [ ! -d masterdir ] ; then
 	# No masterdir, go ahead and bootstrap it
-	/xbps-src binary-bootstrap
+	./xbps-src binary-bootstrap
 else
 	# Have a masterdir, keep it up to date
-	/xbps-src bootstrap-update
+	./xbps-src bootstrap-update
 fi
 
 # Apply provided config file if it exists
