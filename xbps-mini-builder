@@ -96,11 +96,12 @@ done
 # Jump to the directory that owns this script
 cd "${0%/*}" || exit 1
 
-#REPOF="void-packages"
 XBPS_DISTDIR="$(pwd -P)/void-packages"
 readonly XBPS_DISTDIR
 readonly XBPS_MASTERDIR="${XBPS_DISTDIR}/masterdir-${XBPS_MACHINE}"
 
+username=$(id -u -n)
+HOME=$( getent passwd "$username" | cut -d: -f5 )
 #TODO: allow for specifying alternate RSA keys
 # Do we have keys to sign with?
 if [ ! -f "${HOME}"/id_rsa ] ; then
