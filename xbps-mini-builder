@@ -1,125 +1,191 @@
 #!/bin/sh
+# vim: set ts=4 sw=4 et:
 
 exec 3>&1 4>&2
 trap 'exec 2>&4 1>&3' 0 1 2 3
 #exec 1>log.out 2>&1
 
+# from https://en.wikipedia.org/wiki/Getopts
+ARG_STRING="bfhr"
+LONG_ARG_STRING="branch-name,force,help,repo"
+ARGS=$(getopt --options ${ARG_STRING} --longoptions ${LONG_ARG_STRING} -- "${@}") || exit
+eval "set -- ${ARGS}"
+
 show_usage() {
-	echo "Usage:"
-	echo "    xbps-mini-builder [-f|--force]"
-	echo "    -f|--force        build packages even if not updated since last build"
+    cat << _EOF
+Usage:
+
+${PROGNAME}: [options] [arguments]
+
+Options:
+
+-b|--branch-name    <branch-name>
+                    Specify a non-default git branch
+
+-f|--force          build packages even if not updated since last build
+
+-h|--help           Usage output
+
+-r|--repo           <repo URL>
+                    Specify a custom git repo URL
+
+_EOF
 }
 
-REPOF="void-packages"
+binpkg_files_present () {
+    if [ -d "${1}" ]; then
+        for file in "${1}"/*.xbps ; do
+            if [ -f "${file}" ]
+            then
+                return 0
+            fi
+        done
+    else
+        return 1
+    fi
+}
+
+# some of these modifications borrowed from xbps-src
+# main()
+readonly PROGNAME="${0##*/}"
+XBPS_MACHINE=$(xbps-uhelper -C /dev/null arch)
+# default to the same libc when -a is given but not -A
+if [ -n "${XBPS_CROSS_BUILD}" ]; then
+    if [ -z "${XBPS_CROSS_BUILD##*-musl}" ]; then
+        XBPS_MACHINE="${XBPS_MACHINE%-musl}-musl"
+    else
+        XBPS_MACHINE="${XBPS_MACHINE%-musl}"
+    fi
+fi
+
 force_build=0
-while :; do
-	case $1 in
-		-f|--force)
-			force_build=1
-			shift
-			;;
-		-h|--help)
-			show_usage
-			exit
-			;;
-		*)
-			break
-	esac
+BRANCH=""
+# setting default to what is defined in master script
+GIT_REPO="https://github.com/void-linux/void-packages"
+
+while true; do
+    case "${1}" in
+        (-b|--branch)
+            BRANCH=${2}
+            shift 2
+            ;;
+        (-f|--force)
+            force_build=1
+            shift
+            ;;
+        (-h|--help)
+            show_usage
+            exit
+            ;;
+        (-r|--repo)
+            GIT_REPO=${2}
+            shift 2
+            ;;
+        (*)
+            break
+            ;;
+    esac
 done
+
 
 # Jump to the directory that owns this script
 cd "${0%/*}" || exit 1
 
+#REPOF="void-packages"
+XBPS_DISTDIR="$(pwd -P)/void-packages"
+readonly XBPS_DISTDIR
+readonly XBPS_MASTERDIR="${XBPS_DISTDIR}/masterdir-${XBPS_MACHINE}"
+
+#TODO: allow for specifying alternate RSA keys
 # Do we have keys to sign with?
-if [ ! -f "$HOME"/id_rsa ] ; then
-	>&2 echo "No RSA keys found to sign with."
-	return 1
+if [ ! -f "${HOME}"/id_rsa ] ; then
+    >&2 echo "No RSA keys found to sign with."
+    return 1
 fi
 
 # Remove old state
 rm -f changed
 
 # Do we actually have the repo yet?
-if [ ! -d $REPOF ] ; then
-	# No, clone a fresh copy
-	git clone https://github.com/void-linux/void-packages
-	cd $REPOF || exit 2
-	./xbps-src bootstrap-update
-	# On bootstrap we need to build everything
-	cp ../packages.list ../changed
+if [ ! -d "${XBPS_DISTDIR}" ] ; then
+    # No, clone a fresh copy
+    if [ "${BRANCH}" -eq "" ] ; then
+        git clone "${GIT_REPO}"
+    else
+        git clone -b "${BRANCH}" --single-branch "${GIT_REPO}"
+    fi
+    cd "${XBPS_DISTDIR}" || exit 2
+    ./xbps-src bootstrap-update
+    # On bootstrap we need to build everything
+    cp ../packages.list ../changed
 else
-	cd $REPOF || exit 2
-	# Yes, pull in the changes for this run
-	git reset --hard HEAD
-	git pull | tee ../changed
-	./xbps-src bootstrap-update
-	if [ -s "$force_build" ]; then
-		cat packages.list >> ../changed
-	fi
+    cd "${XBPS_DISTDIR}" || exit 2
+    # Yes, pull in the changes for this run
+    git reset --hard HEAD
+    git pull | tee ../changed
+    ./xbps-src bootstrap-update
+    if [ "${force_build}" -eq 1 ]; then
+        cat packages.list >> ../changed
+    fi
 fi
 
-# here we are already in $REPOF
+# here we are already in $XBPS_DISTDIR
 
 # Does this system use another set of repos
 if [ -d /etc/xbps.d ] ; then
-	cat /etc/xbps.d/*.conf > etc/repos-remote.conf
-	# If this platform is 64 bit, override those as well
-	if [ "$(xbps-uhelper arch)" = "x86_64" ] ; then
-		cat /etc/xbps.d/*.conf > etc/repos-remote-x86_64.conf
-	fi
+    cat /etc/xbps.d/*.conf > etc/repos-remote.conf
+    # If this platform is 64 bit, override those as well
+    if [ "$(xbps-uhelper arch)" = "x86_64" ] ; then
+        cat /etc/xbps.d/*.conf > etc/repos-remote-x86_64.conf
+    fi
 
-	# The bootstrap config is loaded seperately
-	if [ -f /etc/xbps.d/00-repository-main.conf ] ; then
-		repo="$(sed 's/^.*=//' < /etc/xbps.d/00-repository-main.conf)"
-		printf 'XBPS_INSTALL_ARGS="--repository=%s --repository=%s/musl"\n' "${repo}" "${repo}" > etc/conf
-	fi
+    # The bootstrap config is loaded seperately
+    if [ -f /etc/xbps.d/00-repository-main.conf ] ; then
+        repo="$(sed 's/^.*=//' < /etc/xbps.d/00-repository-main.conf)"
+        printf 'XBPS_INSTALL_ARGS="--repository=%s --repository=%s/musl"\n' "${repo}" "${repo}" > etc/conf
+    fi
 fi
 
+#TODO: account for other architectures
 # Do we have a live build environment
-if [ ! -d masterdir ] ; then
-	# No masterdir, go ahead and bootstrap it
-	./xbps-src binary-bootstrap
+if [ ! -d "${XBPS_MASTERDIR}" ] ; then
+    # No masterdir, go ahead and bootstrap it
+    ./xbps-src binary-bootstrap
 else
-	# Have a masterdir, keep it up to date
-	./xbps-src bootstrap-update
+    # Have a masterdir, keep it up to date
+    ./xbps-src bootstrap-update
 fi
 
 # Apply provided config file if it exists
 if [ -f ../xbps-src.conf ] ; then
-	cat ../xbps-src.conf >> etc/conf
+    cat ../xbps-src.conf >> etc/conf
 fi
 
 if [ $# -eq 0 ] ; then
-	while read -r package ; do
-		if grep "${package}" ../changed; then
-			./xbps-src pkg "${package}"
-		fi
-	done < ../packages.list
+    while read -r package ; do
+        if grep "${package}" ../changed; then
+            ./xbps-src pkg "${package}"
+        fi
+    done < ../packages.list
 else
-	for pkg in "$@"; do
-		./xbps-src pkg "${pkg}"
-	done
+    for pkg in "$@"; do
+        ./xbps-src pkg "${pkg}"
+    done
 fi
 
-binpkg_files_present () {
-	if [ -d "hostdir/binpkgs/${1}" ]; then
-		for file in "hostdir/binpkgs/${1}"/*.xbps ; do
-			if [ -f "$file" ]
-			then
-				return 0
-			fi
-		done
-	else
-		return 1
-	fi
-}
 
 for folder in "" multilib multilib/nonfree nonfree ; do
-	printf "Trying to sign packages in %s\\n" ${folder}
-	if binpkg_files_present ${folder} ; then
-		printf "Updating repodata in hostdir/binpkgs/%s\\n" ${folder}
-		xbps-rindex --sign --signedby "XBPS-mini-builder" --privkey "$HOME"/id_rsa "hostdir/binpkgs/${folder}"
-		printf "Signing packages in hostdir/binpkgs/%s\\n" ${folder}
-		xbps-rindex --sign-pkg --privkey "$HOME"/id_rsa hostdir/binpkgs/${folder}*.xbps
-	fi
+    printf "Trying to sign packages in %s\\n" ${folder}
+    BINPKGS=""
+    if [ "${BRANCH}" -ne "" ] ; then
+        BINPKGS="hostdir/binpkgs/${BRANCH}/${folder}"
+    else
+        BINPKGS="hostdir/binpkgs/${folder}"
+    fi
+    if binpkg_files_present "${BINPKGS}" ; then
+        printf "Updating repodata in %s\\n" "${BINPKGS}"
+        xbps-rindex --sign --signedby "XBPS-mini-builder" --privkey "${HOME}"/id_rsa "${BINPKGS}"
+        printf "Signing packages in %s\\n" "${BINPKGS}"
+        xbps-rindex --sign-pkg --privkey "${HOME}"/id_rsa "${BINPKGS}"/*.xbps
+    fi
 done
